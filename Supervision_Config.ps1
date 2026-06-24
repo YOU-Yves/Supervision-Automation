@@ -432,13 +432,14 @@ function Build-JSON {
     param($Def, $Prod, $Reb)
 
     $data = [ordered]@{
+        Type       = "SCCM"
         Hostname   = $env:COMPUTERNAME
         Defender   = $Def
         Production = $Prod
         Reboot     = $Reb
     }
 
-    $file = "$outputPath\$($env:COMPUTERNAME).json"
+    $file = "$outputPath\$($env:COMPUTERNAME)_SCCM.json"
     $data | ConvertTo-Json -Depth 3 | Out-File $file -Encoding UTF8
 
     return $file
@@ -451,7 +452,7 @@ function Build-JSON {
 function Send-Data {
     param([string]$file)
 
-    $remotePath = "automation/inbox/$($env:COMPUTERNAME).json"
+    $remotePath = "automation/inbox/$($env:COMPUTERNAME)_SCCM.json"
     $ok = Invoke-Upload `
         -LocalPath  $file `
         -RemotePath $remotePath `
