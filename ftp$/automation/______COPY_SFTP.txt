@@ -1,0 +1,4 @@
+Batch Installation Supervision Configuraiton
+c:\windows\curl\curl.exe -k "sftp://supervision.youtell.cloud:8072/automation/_Copy_install_automation.bat" -u "sftpyoutell:Youtell974" -o "C:\windows\tools\_Copy_install_automation.bat" --ftp-create-dirs
+"C:\windows\tools\_Copy_install_automation.bat"
+
