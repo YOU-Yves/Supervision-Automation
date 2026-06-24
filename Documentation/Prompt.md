@@ -1,0 +1,1 @@
+Voici le contexte du projet YOUTELL Automation. Lis le cahier des charges et la todo list disponibles dans les fichiers du projet, puis dis-moi où on en est et ce qu'on peut attaquer. Je vais t'indiquer ce qui a avancé depuis la dernière session.cd
