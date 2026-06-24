@@ -12,7 +12,7 @@
 
 $SiteCode      = "CCM"
 $SiteServer    = "ZEBUREAU-SCCM01"
-$InboxPath     = "C:\Users\youtell\YOUTELL RSSI\SUPERVISION - Général\SCCM"
+$InboxPath     = "C:\Users\youtell\YOUTELL RSSI\SUPERVISION - Général\SCCM\ToDo"
 $ArchivePath   = "C:\Users\youtell\YOUTELL RSSI\SUPERVISION - Général\SCCM\Traites"
 $LogPath       = "C:\Windows\Tools\Automation\Logs\SCCM_Admin.log"
 $TempPath      = "C:\Windows\Tools\Automation\Logs"
