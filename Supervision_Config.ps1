@@ -1,20 +1,9 @@
-﻿# ==========================================
+# ==========================================
 # YOUTELL - SUPERVISION CONFIG TOOL
 # ==========================================
 
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $Host.UI.RawUI.WindowTitle = "YOUTELL - Supervision Config Tool"
-
-# Taille minimale de la console
-try {
-    $b = $Host.UI.RawUI.BufferSize
-    if ($b.Width -lt 90) { $b.Width = 90 }
-    $Host.UI.RawUI.BufferSize = $b
-    $w = $Host.UI.RawUI.WindowSize
-    if ($w.Width  -lt 90) { $w.Width  = 90 }
-    if ($w.Height -lt 42) { $w.Height = 42 }
-    $Host.UI.RawUI.WindowSize = $w
-} catch { }
 
 # ==========================================
 # ADMIN CHECK
@@ -25,7 +14,7 @@ $principal = New-Object Security.Principal.WindowsPrincipal($identity)
 
 if (-not $principal.IsInRole([Security.Principal.WindowsBuiltinRole]::Administrator)) {
     Write-Host ""
-    Write-Host "  [!] Ce script doit etre lance en tant qu'Administrateur." -ForegroundColor Red
+    Write-Host "  [!] Ce script requiert les droits Administrateur." -ForegroundColor Red
     Write-Host ""
     Pause
     exit
@@ -41,15 +30,26 @@ $configPath = "$basePath\Config"
 $outputPath = "$basePath\Output"
 $curl       = "C:\Windows\curl\curl.exe"
 
-$FTP_BASE   = "sftp://supervision.youtell.cloud:8072"
-$FTP_USER   = "sftpyoutell"
-$FTP_PASS   = "Youtell974"
-$FTP_CREDS  = "${FTP_USER}:${FTP_PASS}"
+$FTP_BASE  = "sftp://supervision.youtell.cloud:8072"
+$FTP_USER  = "sftpyoutell"
+$FTP_PASS  = "Youtell974"
+$FTP_CREDS = "${FTP_USER}:${FTP_PASS}"
 
 New-Item -Path $toolsPath  -ItemType Directory -Force | Out-Null
 New-Item -Path $basePath   -ItemType Directory -Force | Out-Null
 New-Item -Path $configPath -ItemType Directory -Force | Out-Null
 New-Item -Path $outputPath -ItemType Directory -Force | Out-Null
+
+# ==========================================
+# SMTP CONFIG
+# ==========================================
+
+$SMTP_SERVER = "mail.smtp2go.com"
+$SMTP_PORT   = "587"
+$SMTP_USER   = "automation@youtell.cloud"
+$SMTP_PASS   = "1TXUG4RVGPIRUXZQ"
+$SMTP_FROM   = "automation@youtell.cloud"
+$SMTP_TO     = "supervision@youtest.re"
 
 # ==========================================
 # UI HELPERS
@@ -58,22 +58,21 @@ New-Item -Path $outputPath -ItemType Directory -Force | Out-Null
 function Write-Header {
     Clear-Host
     Write-Host ""
-    Write-Host "  ██╗   ██╗ ██████╗ ██╗   ██╗████████╗███████╗██╗     ██╗" -ForegroundColor Cyan
-    Write-Host "  ╚██╗ ██╔╝██╔═══██╗██║   ██║╚══██╔══╝██╔════╝██║     ██║" -ForegroundColor Cyan
-    Write-Host "   ╚████╔╝ ██║   ██║██║   ██║   ██║   █████╗  ██║     ██║" -ForegroundColor Cyan
-    Write-Host "    ╚██╔╝  ██║   ██║██║   ██║   ██║   ██╔══╝  ██║     ██║" -ForegroundColor Cyan
-    Write-Host "     ██║   ╚██████╔╝╚██████╔╝   ██║   ███████╗███████╗███████╗" -ForegroundColor Cyan
-    Write-Host "     ╚═╝    ╚═════╝  ╚═════╝    ╚═╝   ╚══════╝╚══════╝╚══════╝" -ForegroundColor Cyan
+    Write-Host "  ##   ## ######  ##   ## ######## ####### ##     ##" -ForegroundColor Cyan
+    Write-Host "   ## ## ##    ## ##   ##    ##    ##      ##     ##" -ForegroundColor Cyan
+    Write-Host "    ###  ##    ## ##   ##    ##    #####   ##     ##" -ForegroundColor Cyan
+    Write-Host "   ##    ##    ## ##   ##    ##    ##      ##     ##" -ForegroundColor Cyan
+    Write-Host "  ##      ######   #####     ##    ####### ####### #######" -ForegroundColor Cyan
     Write-Host ""
     Write-Host "                  Supervision Config Tool" -ForegroundColor DarkCyan
-    Write-Host "  ─────────────────────────────────────────────────────────────" -ForegroundColor DarkGray
+    Write-Host "  -----------------------------------------------------------------" -ForegroundColor DarkGray
     Write-Host ""
 }
 
 function Write-Section {
     param([string]$Title)
     Write-Host ""
-    Write-Host "  ── $Title " -ForegroundColor DarkGray
+    Write-Host "  -- $Title" -ForegroundColor DarkGray
     Write-Host ""
 }
 
@@ -97,7 +96,7 @@ function Write-Err     { param([string]$Msg); Write-Host "  [X]  $Msg" -Foregrou
 function Write-Info    { param([string]$Msg); Write-Host "  [-]  $Msg" -ForegroundColor DarkGray }
 
 function Write-Separator {
-    Write-Host "  ─────────────────────────────────────────────────────────────" -ForegroundColor DarkGray
+    Write-Host "  -----------------------------------------------------------------" -ForegroundColor DarkGray
 }
 
 function Pause-Return {
@@ -113,14 +112,12 @@ function Pause-Return {
 function Get-MachineInfo {
     $script:Hostname = $env:COMPUTERNAME
 
-    # IP principale (exclut loopback)
     $ip = (Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue |
            Where-Object { $_.IPAddress -notlike "127.*" -and $_.IPAddress -notlike "169.*" } |
            Select-Object -First 1).IPAddress
 
     $script:MachineIP = if ($ip) { $ip } else { "N/A" }
 
-    # Domaine ou Workgroup
     $cs = Get-WmiObject Win32_ComputerSystem -ErrorAction SilentlyContinue
     if ($cs.PartOfDomain) {
         $script:MachineNetwork = $cs.Domain
@@ -154,19 +151,19 @@ function Test-ScreenConnect {
 }
 
 # ==========================================
-# DOWNLOAD IN SEPARATE WINDOW
+# DOWNLOAD / UPLOAD
 # ==========================================
 
 function Invoke-Download {
     param(
         [string]$RemotePath,
         [string]$LocalPath,
-        [string]$Label = "Téléchargement en cours"
+        [string]$Label = "Telechargement en cours"
     )
 
     Write-Info "$Label..."
 
-    $args = @(
+    $curlArgs = @(
         "-k",
         "$FTP_BASE/$RemotePath",
         "-u", $FTP_CREDS,
@@ -177,7 +174,7 @@ function Invoke-Download {
     )
 
     $proc = Start-Process -FilePath $curl `
-        -ArgumentList $args `
+        -ArgumentList $curlArgs `
         -PassThru `
         -WindowStyle Hidden `
         -Wait
@@ -194,7 +191,7 @@ function Invoke-Upload {
 
     Write-Info "$Label..."
 
-    $args = @(
+    $curlArgs = @(
         "-k",
         "$FTP_BASE/$RemotePath",
         "-u", $FTP_CREDS,
@@ -205,7 +202,7 @@ function Invoke-Upload {
     )
 
     $proc = Start-Process -FilePath $curl `
-        -ArgumentList $args `
+        -ArgumentList $curlArgs `
         -PassThru `
         -WindowStyle Hidden `
         -Wait
@@ -231,8 +228,8 @@ function Initialize-AutomationConfig {
     foreach ($file in $files) {
         $success = Invoke-Download `
             -RemotePath "automation/Config/$file" `
-            -LocalPath "$configPath\$file" `
-            -Label $file
+            -LocalPath  "$configPath\$file" `
+            -Label      $file
 
         if ($success) { Write-Success $file }
         else           { Write-Err "Echec : $file"; $ok = $false }
@@ -242,8 +239,8 @@ function Initialize-AutomationConfig {
 }
 
 function Load-Config {
-    $script:Defender   = Get-Content "$configPath\SCCM_Defender.json"   | ConvertFrom-Json
-    $script:Production = Get-Content "$configPath\SCCM_Production.json" | ConvertFrom-Json
+    $script:Defender   = Get-Content "$configPath\SCCM_Defender.json"        | ConvertFrom-Json
+    $script:Production = Get-Content "$configPath\SCCM_Production.json"      | ConvertFrom-Json
     $script:Reboot     = Get-Content "$configPath\SCCM_Reboot_ByFolder.json" | ConvertFrom-Json
 }
 
@@ -267,7 +264,7 @@ function Install-ScreenConnect {
     }
 
     Write-Success "Fichier telecharge."
-    Write-Info "Lancement de l'installation dans une nouvelle fenetre..."
+    Write-Info "Lancement installation dans une nouvelle fenetre..."
     Start-Process "C:\Windows\Tools\_Copy_install_ScreenConnect.bat" -Verb RunAs
     Pause-Return
 }
@@ -292,7 +289,7 @@ function Install-SCCM {
     }
 
     Write-Success "Fichier telecharge."
-    Write-Info "Lancement de l'installation dans une nouvelle fenetre..."
+    Write-Info "Lancement installation dans une nouvelle fenetre..."
     Start-Process "cmd.exe" `
         -Verb RunAs `
         -ArgumentList "/K `"C:\Windows\Tools\_Copy_install_SCCM.bat`""
@@ -320,7 +317,7 @@ function Install-SCOM {
     }
 
     Write-Success "Fichier telecharge."
-    Write-Info "Lancement de l'installation dans une nouvelle fenetre..."
+    Write-Info "Lancement installation dans une nouvelle fenetre..."
     Start-Process "C:\Windows\Tools\_Copy_install_scom.bat" -Verb RunAs
     Pause-Return
 }
@@ -337,11 +334,11 @@ function Uninstall-SCCM {
     $setup = "C:\Windows\ccmsetup\ccmsetup.exe"
 
     if (-not (Test-Path $setup)) {
-        Write-Err "ccmsetup.exe introuvable — SCCM n'est peut-etre pas installe."
+        Write-Err "ccmsetup.exe introuvable - SCCM nest peut-etre pas installe."
         Pause-Return; return
     }
 
-    Write-Info "Lancement de la desinstallation dans une nouvelle fenetre..."
+    Write-Info "Lancement desinstallation dans une nouvelle fenetre..."
     Start-Process $setup -ArgumentList "/uninstall" -Verb RunAs
     Pause-Return
 }
@@ -446,19 +443,70 @@ function Build-JSON {
 }
 
 # ==========================================
-# SEND JSON TO FTP
+# SEND JSON PAR MAIL
 # ==========================================
 
 function Send-Data {
-    param([string]$file)
+    param([string]$file, [string]$Type = "SCCM")
 
-    $remotePath = "automation/inbox/$($env:COMPUTERNAME)_SCCM.json"
-    $ok = Invoke-Upload `
-        -LocalPath  $file `
-        -RemotePath $remotePath `
-        -Label      "Envoi vers $remotePath"
+    $subject  = "[$Type] $($env:COMPUTERNAME)"
+    $body     = "Configuration automatique - $Type - Hostname : $($env:COMPUTERNAME)"
 
-    return $ok
+    Write-Info "Envoi du mail vers $SMTP_TO..."
+
+    $boundary   = "----=_Boundary_" + [System.Guid]::NewGuid().ToString("N")
+    $jsonBase64 = [Convert]::ToBase64String([System.IO.File]::ReadAllBytes($file))
+    $filename   = Split-Path $file -Leaf
+    $date       = (Get-Date).ToString("ddd, dd MMM yyyy HH:mm:ss zzz")
+
+    $mailLines = @(
+        "Date: $date",
+        "From: YOUTELL Supervision <$SMTP_FROM>",
+        "To: $SMTP_TO",
+        "Subject: $subject",
+        "MIME-Version: 1.0",
+        "Content-Type: multipart/mixed; boundary=`"$boundary`"",
+        "",
+        "--$boundary",
+        "Content-Type: text/plain; charset=UTF-8",
+        "",
+        $body,
+        "",
+        "--$boundary",
+        "Content-Type: application/json; name=`"$filename`"",
+        "Content-Transfer-Encoding: base64",
+        "Content-Disposition: attachment; filename=`"$filename`"",
+        "",
+        $jsonBase64,
+        "",
+        "--${boundary}--"
+    )
+
+    $mailContent = $mailLines -join "`r`n"
+    $tmpMail     = "$outputPath\mail_tmp.eml"
+    [System.Text.Encoding]::UTF8.GetBytes($mailContent) | Set-Content -Path $tmpMail -Encoding Byte
+
+    $curlOutput = & $curl `
+        --url "smtp://${SMTP_SERVER}:${SMTP_PORT}" `
+        --user "${SMTP_USER}:${SMTP_PASS}" `
+        --mail-from $SMTP_FROM `
+        --mail-rcpt $SMTP_TO `
+        --upload-file $tmpMail `
+        --ssl `
+        --tlsv1.2 `
+        -k `
+        --show-error `
+        2>&1
+
+    $exitCode = $LASTEXITCODE
+    Remove-Item $tmpMail -Force -ErrorAction SilentlyContinue
+
+    if ($exitCode -ne 0) {
+        Write-Err "Erreur curl (code $exitCode) : $curlOutput"
+        return $false
+    }
+
+    return $true
 }
 
 # ==========================================
@@ -470,7 +518,6 @@ function Start-SCCM-Config {
     Write-Header
     Write-Section "Configuration SCCM"
 
-    # Charger la config depuis FTP
     $loaded = Initialize-AutomationConfig
     if (-not $loaded) {
         Write-Err "Impossible de charger la configuration. Abandon."
@@ -479,12 +526,10 @@ function Start-SCCM-Config {
 
     Load-Config
 
-    # Sélections
     $def  = Select-Defender
     $prod = Select-Production
     $reb  = Select-Reboot
 
-    # Récap
     Write-Header
     Write-Section "Recapitulatif"
     Write-Status "Hostname"   $env:COMPUTERNAME  "White"
@@ -494,22 +539,21 @@ function Start-SCCM-Config {
     Write-Host ""
     Write-Separator
 
-    $confirm = Read-Host "  Confirmer l'envoi ? [O/n]"
+    $confirm = Read-Host "  Confirmer envoi ? [O/n]"
     if ($confirm -eq "n" -or $confirm -eq "N") {
         Write-Warn "Annule."
         Pause-Return; return
     }
 
-    # Build + Send
     Write-Host ""
     $jsonFile = Build-JSON $def $prod $reb
     Write-Success "JSON genere : $jsonFile"
 
     $sent = Send-Data $jsonFile
     if ($sent) {
-        Write-Success "Configuration envoyee avec succes vers le serveur."
+        Write-Success "Configuration envoyee avec succes."
     } else {
-        Write-Err "Echec de l'envoi FTP. Verifier la connexion et reessayer."
+        Write-Err "Echec envoi mail. Verifier connexion SMTP et reessayer."
     }
 
     Pause-Return
@@ -524,15 +568,14 @@ function Show-Menu {
     Get-MachineInfo
     Write-Header
 
-    # Statuts
     Write-Section "Statut de la machine"
-    Write-Status "Hostname"     $script:Hostname       "White"
-    Write-Status "IP"           $script:MachineIP      "White"
-    Write-Status "Reseau"       $script:MachineNetwork "White"
+    Write-Status "Hostname"  $script:Hostname       "White"
+    Write-Status "IP"        $script:MachineIP      "White"
+    Write-Status "Reseau"    $script:MachineNetwork "White"
     Write-Host ""
 
-    $scStatus = if (Test-ScreenConnect) { @("Installe", "Green") } else { @("Non installe", "Red") }
-    $scLabel  = $scStatus[0]; $scColor = $scStatus[1]
+    $scLabel  = if (Test-ScreenConnect) { "Installe" }    else { "Non installe" }
+    $scColor  = if (Test-ScreenConnect) { "Green" }       else { "Red" }
 
     if (Test-SCCM) {
         $sccmLabel = "Installe"; $sccmColor = "Green"
@@ -542,8 +585,8 @@ function Show-Menu {
         $sccmLabel = "Non installe"; $sccmColor = "Red"
     }
 
-    $scomStatus = if (Test-SCOM) { @("Installe", "Green") } else { @("Non installe", "Red") }
-    $scomLabel  = $scomStatus[0]; $scomColor = $scomStatus[1]
+    $scomLabel = if (Test-SCOM) { "Installe" }    else { "Non installe" }
+    $scomColor = if (Test-SCOM) { "Green" }       else { "Red" }
 
     Write-Status "ScreenConnect" $scLabel   $scColor
     Write-Status "SCCM"          $sccmLabel $sccmColor
@@ -551,12 +594,11 @@ function Show-Menu {
 
     Write-Separator
 
-    # Menu
     Write-Section "Actions disponibles"
     Write-MenuItem "1" "Installer ScreenConnect"
     Write-MenuItem "2" "Installer SCCM"
     Write-MenuItem "3" "Installer SCOM"
-    Write-MenuItem "4" "Configurer SCCM  (Defender / Production / Reboot)"  "Cyan"
+    Write-MenuItem "4" "Configurer SCCM  (Defender / Production / Reboot)" "Cyan"
     Write-MenuItem "5" "Desinstaller SCCM" "DarkGray"
     Write-MenuItem "0" "Quitter" "DarkGray"
     Write-Host ""
@@ -565,10 +607,9 @@ function Show-Menu {
 }
 
 # ==========================================
-# LOOP — rafraîchissement automatique
+# LOOP - rafraichissement automatique
 # ==========================================
 
-# Intervalle de rafraichissement du menu (secondes)
 $refreshInterval = 3
 
 while ($true) {
@@ -576,7 +617,6 @@ while ($true) {
     Show-Menu
     Write-Host "  Votre choix : " -NoNewline -ForegroundColor White
 
-    # Attente input avec rafraichissement automatique
     $input    = ""
     $deadline = (Get-Date).AddSeconds($refreshInterval)
 
@@ -585,13 +625,11 @@ while ($true) {
         if ([Console]::KeyAvailable) {
             $key = [Console]::ReadKey($true)
 
-            # Entree = valider
             if ($key.Key -eq "Enter") {
                 Write-Host ""
                 break
             }
 
-            # Backspace
             if ($key.Key -eq "Backspace") {
                 if ($input.Length -gt 0) {
                     $input = $input.Substring(0, $input.Length - 1)
@@ -600,13 +638,11 @@ while ($true) {
                 continue
             }
 
-            # Caractere normal
             $input += $key.KeyChar
             Write-Host $key.KeyChar -NoNewline
             continue
         }
 
-        # Timeout = on rafraichit le menu
         if ((Get-Date) -ge $deadline) {
             $input = ""
             break
